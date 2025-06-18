@@ -21,8 +21,9 @@ def get_chats():
         if chats:
             chat_list = [chat.to_dict() for chat in chats]
             return make_response(jsonify(chat_list), 200)
+        
         else:
-            return make_response(jsonify({'message': "No chats yet"}), 204)
+            return make_response(jsonify({'message': "No chats yet"}), 200)
     except Exception as e:
         return make_response(jsonify({"error": str(e)}), 404)
 
@@ -37,10 +38,25 @@ def delete_chat(id):
     except Exception as e:
         return make_response(jsonify({"message": str(e)}), 500)
 
+@routes_bp.route('/chat/<int:id>', methods=["PUT"])
+def update_chat_name(id):
+    try:
+        data = request.get_json()
+        chat = Convos.query.get(id)
+        if 'title' in data:
+            chat.title = data['title']
+            db.session.commit()
+            return make_response(jsonify({"message": "Update successful"}, 200))
+        return make_response(jsonify({'message': "No new name identified"}), 400)
+    except Exception as e:
+        return make_response(jsonify({"message": str(e)}), 500)
+
+
+# since the new chat will start with the first message sent, then adding a message should be able to add a convo object to db
 @routes_bp.route('/talk', methods=['POST'])
 def post_chats():
     data = request.get_json()
-
+    
     if not data or 'content' not in data:
         return jsonify({"error": "Missing message content"})
     if 'chat' not in data:
@@ -56,3 +72,14 @@ def post_chats():
         new_exchange = Chat(role="user", content=data["content"], convo=data["chat"])
         commit(new_exchange)
         return make_response(jsonify({"message": "New message created"}), 200)
+
+@routes_bp.route('/getmessages/<int:id>')
+def get_messages(id):
+    try:
+        convo = Convos.query.get(id)
+        messages = convo.messages
+        if messages:
+            message_list = [msg.to_dict() for msg in messages]
+        return make_response(jsonify(message_list), 200)
+    except Exception as e:
+        return make_response(jsonify({"message": str(e)}), 500)

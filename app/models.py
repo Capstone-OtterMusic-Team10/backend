@@ -1,4 +1,5 @@
 from . import db
+from datetime import datetime
 
 # user class representing the table in db
 class User(db.Model):
@@ -12,10 +13,11 @@ class User(db.Model):
 class Convos(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(80), unique=True, nullable=False)
+    title = db.Column(db.String(80), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('otteruser.id'), nullable=False)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     messages = db.relationship('Chat', backref='convo_obj', cascade='all, delete-orphan')
+    time = db.Column(db.DateTime, default=datetime.now())
     def to_dict(self):
         return {
             "id": self.id,
@@ -31,7 +33,7 @@ class Chat(db.Model):
     role = db.Column(db.String(20), nullable=False)
     content = db.Column(db.Text, nullable=False)
     convo = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
-
+    time = db.Column(db.DateTime, default=datetime.now())
     def to_dict(self):
         return {
             "id": self.id,
@@ -40,7 +42,7 @@ class Chat(db.Model):
             "convo": self.convo
         }
 
-
+# might not need it after all
 class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), unique=True, nullable=False)
