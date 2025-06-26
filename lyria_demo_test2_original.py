@@ -38,11 +38,9 @@ websockets.
 """
 import asyncio
 import pyaudio
-from dotenv import load_dotenv
 import os
 from google import genai
 from google.genai import types
-
 
 # Longer buffer reduces chance of audio drop, but also delays audio and user commands.
 BUFFER_SECONDS=1
@@ -52,8 +50,7 @@ CHANNELS=2
 MODEL='models/lyria-realtime-exp'
 OUTPUT_RATE=48000
 
-load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+api_key = os.environ.get("GOOGLE_API_KEY")
 
 if api_key is None:
     print("Please enter your API key")
@@ -208,36 +205,16 @@ async def main():
                     prompts=[types.WeightedPrompt(text=prompt_str, weight=1.0)]
                 )
 
-        # Get user input for BPM, Key (Scale), and Prompt
-        bpm_str = await asyncio.to_thread(input, "Enter BPM (e.g., 120, or press Enter for default): ")
-        try:
-            config.bpm = int(bpm_str)
-        except ValueError:
-            print("No/invalid BPM entered, using default 120.")
-            config.bpm = 120
-
-        print("Available scales:")
-        scale_options = {str(i + 1): member for i, member in enumerate(types.Scale)}
-        for i, member in enumerate(types.Scale):
-            print(f"{i + 1}: {member.name}")
-
-        scale_choice_str = await asyncio.to_thread(input, f"Enter the number for your desired scale (or press Enter for default A_FLAT_MAJOR_F_MINOR): ")
-        if scale_choice_str in scale_options:
-            config.scale = scale_options[scale_choice_str]
-        else:
-            print("Invalid selection or no input. Using default scale.")
-            config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR
-
-        initial_prompt = await asyncio.to_thread(input, "Enter an initial prompt (e.g., 'Piano solo', or press Enter for default): ")
-        if not initial_prompt:
-            initial_prompt = "Piano"
-            print("No prompt entered, using default: 'Piano'")
-
-        print(f"Setting initial BPM to {config.bpm}, scale to {config.scale.name}, and prompt to '{initial_prompt}'")
-        await session.set_music_generation_config(config=config)
+        print("Starting with some piano")
         await session.set_weighted_prompts(
-            prompts=[types.WeightedPrompt(text=initial_prompt, weight=1.0)]
+            prompts=[types.WeightedPrompt(text="Piano", weight=1.0)]
         )
+
+        # Set initial BPM and Scale
+        config.bpm = 120
+        config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR # Example initial scale
+        print(f"Setting initial BPM to {config.bpm} and scale to {config.scale.name}")
+        await session.set_music_generation_config(config=config)
 
         print(f"Let's get the party started!")
         await session.play()
