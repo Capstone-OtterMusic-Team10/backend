@@ -5,7 +5,9 @@ To run:
 - `python -m venv venv` or `python3 -m venv venv`
 - Unix: `source venv/bin/activate`; Windows: `venv\Scripts\activate`
 - `pip install -r requirements.txt`
-
+- `flask db init`
+- `flask db migrate`
+- `flask db upgrade`
 ## Database Setup (Postgresql)
 
 If you want to setup database on your local machine, follow the [Postgres Installation Guide](https://dev.to/techprane/setting-up-postgresql-for-macos-users-step-by-step-instructions-2e30)

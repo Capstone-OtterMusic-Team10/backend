@@ -10,13 +10,13 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
 
 # conversation - will be the table containing individual conversation (as we might have many tracks per one)
-class Convos(db.Model):
+class Chat(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('otteruser.id'), nullable=False)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
-    messages = db.relationship('Chat', backref='convo_obj', cascade='all, delete-orphan')
+    messages = db.relationship('Messages', backref='convo_obj', cascade='all, delete-orphan')
     time = db.Column(db.DateTime, default=datetime.now())
     def to_dict(self):
         return {
@@ -26,7 +26,7 @@ class Convos(db.Model):
             "folder_id": self.folder_id
         }
 # chat table will contian individual messages and the track id that was generated as part of that message
-class Chat(db.Model):
+class Messages(db.Model):
     __tablename__ = 'messages'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -41,6 +41,12 @@ class Chat(db.Model):
             "content": self.content,
             "convo": self.convo
         }
+
+class Audios(db.Model):
+    id = db.Column(db.Integer, primary_key = True)
+    link = db.Column(db.String(255), nullable = False)
+    chat = db.Column(db.Integer, db.ForeignKey("conversations.id"))
+    prompt = db.Column(db.Integer, db.ForeignKey("messages.id"))
 
 # might not need it after all
 class Folder(db.Model):

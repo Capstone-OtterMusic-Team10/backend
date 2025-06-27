@@ -1,6 +1,6 @@
-from flask import Blueprint, jsonify, request, make_response
-from .models import Convos, Chat
-from . import db
+from flask import Blueprint, jsonify, request, make_response, send_file
+from ..models import Chat, Messages
+from .. import db
 
 routes_bp = Blueprint('routes', __name__)
 
@@ -16,8 +16,9 @@ def commit(new_obj, action = "add"):
 # chat functionality
 @routes_bp.route('/chat')
 def get_chats():
+    
     try:
-        chats = Convos.query.all()
+        chats = Chat.query.all()
         if chats:
             chat_list = [chat.to_dict() for chat in chats]
             return make_response(jsonify(chat_list), 200)
@@ -30,7 +31,7 @@ def get_chats():
 @routes_bp.route('/chat/<int:id>', methods=["DELETE"])
 def delete_chat(id):
     try:
-        chat = Convos.query.get(id)
+        chat = Chat.query.get(id)
         if not chat:
             return make_response(jsonify({"message": "Chat is not found"}), 404)
         commit(chat, "delete")
@@ -42,7 +43,7 @@ def delete_chat(id):
 def update_chat_name(id):
     try:
         data = request.get_json()
-        chat = Convos.query.get(id)
+        chat = Chat.query.get(id)
         if 'title' in data:
             chat.title = data['title']
             db.session.commit()
@@ -55,28 +56,34 @@ def update_chat_name(id):
 # since the new chat will start with the first message sent, then adding a message should be able to add a convo object to db
 @routes_bp.route('/talk', methods=['POST'])
 def post_chats():
+    file_path = '../static/testtest.mp3'
     data = request.get_json()
     
     if not data or 'content' not in data:
         return jsonify({"error": "Missing message content"})
     if 'chat' not in data:
-        number_convos = Convos.query.count()
-        new_convo = Convos(title=f"Chat {number_convos}", user_id = 1)
+        number_of_chats = Chat.query.count()
+        new_convo = Chat(title=f"Chat {number_of_chats}", user_id = 1)
         commit(new_convo)
         # Here we would have a process that gives us music
-        new_exchange = Chat(role="user", content=data["content"], convo=new_convo.id)
+        new_exchange = Messages(role="user", content=data["content"], convo=new_convo.id)
+        
         commit(new_exchange)
         return make_response(jsonify({"new_convo": new_convo.id}), 200)
     # Here we would have a process that gives us music
     else:
-        new_exchange = Chat(role="user", content=data["content"], convo=data["chat"])
+        new_exchange = Messages(role="user", content=data["content"], convo=data["chat"])
         commit(new_exchange)
         return make_response(jsonify({"message": "New message created"}), 200)
+@routes_bp.route('/get-audio')
+def get_audio():
+    file_path = '../static/testtest.mp3'
+    return send_file(file_path)
 
 @routes_bp.route('/getmessages/<int:id>')
 def get_messages(id):
     try:
-        convo = Convos.query.get(id)
+        convo = Chat.query.get(id)
         messages = convo.messages
         if messages:
             message_list = [msg.to_dict() for msg in messages]

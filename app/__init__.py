@@ -9,15 +9,19 @@ migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
+    
     CORS(app, resources={r"/*": {"origins": "*"}})
     app.config.from_object(Config)
 
     db.init_app(app)
     migrate.init_app(app, db)
-    from app.routes import routes_bp
+    from app.chats.routes import routes_bp
     app.register_blueprint(routes_bp) 
-
+    
     with app.app_context():
-        db.create_all()
+        from . import populate_db
+        populate_db.add_initial_data()
+
+
     return app
 
