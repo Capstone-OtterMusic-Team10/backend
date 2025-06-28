@@ -54,7 +54,7 @@ def update_chat_name(id):
 
 
 # since the new chat will start with the first message sent, then adding a message should be able to add a convo object to db
-@routes_bp.route('/talk', methods=['POST'])
+@routes_bp.route('/talk/', methods=['POST'])
 def post_chats():
     file_path = '../static/testtest.mp3'
     data = request.get_json()
@@ -75,6 +75,7 @@ def post_chats():
         new_exchange = Messages(role="user", content=data["content"], convo=data["chat"])
         commit(new_exchange)
         return make_response(jsonify({"message": "New message created"}), 200)
+    
 @routes_bp.route('/get-audio')
 def get_audio():
     file_path = '../static/testtest.mp3'
