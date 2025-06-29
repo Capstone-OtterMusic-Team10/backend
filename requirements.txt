@@ -32,3 +32,6 @@ typing-inspection==0.4.1
 typing_extensions==4.14.0
 uritemplate==4.2.0
 urllib3==2.5.0
+
+pyaudio~=0.2.14
+pydub~=0.25.1

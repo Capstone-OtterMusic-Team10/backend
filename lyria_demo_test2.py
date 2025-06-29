@@ -37,6 +37,7 @@ The script takes a prompt from the command line and streams the audio back over
 websockets.
 """
 import asyncio
+import wave
 import pyaudio
 from dotenv import load_dotenv
 import os
@@ -51,6 +52,11 @@ FORMAT=pyaudio.paInt16
 CHANNELS=2
 MODEL='models/lyria-realtime-exp'
 OUTPUT_RATE=48000
+
+# Define audio parameters
+channels = 2
+sample_width = 2  # 16-bit audio = 2 bytes
+frame_rate = 48000
 
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -72,6 +78,7 @@ async def main():
             chunks_count = 0
             output_stream = p.open(
                 format=FORMAT, channels=CHANNELS, rate=OUTPUT_RATE, output=True, frames_per_buffer=CHUNK)
+            audio_file = open("output_audio.raw", "wb")  # Save raw audio data
             async for message in session.receive():
                 chunks_count += 1
                 if chunks_count == 1:
@@ -82,11 +89,13 @@ async def main():
                 # print("Received chunk with metadata: ", message.server_content.audio_chunks[0].source_metadata)
                     audio_data = message.server_content.audio_chunks[0].data
                     output_stream.write(audio_data)
+                    audio_file.write(audio_data)
                 elif message.filtered_prompt:
                     print("Prompt was filtered out: ", message.filtered_prompt)
                 else:
                     print("Unknown error occured with message: ", message)
                 await asyncio.sleep(10**-12)
+            audio_file.close()
 
         async def send():
             await asyncio.sleep(5) # Allow initial prompt to play a bit
@@ -248,7 +257,19 @@ async def main():
         # Don't quit the loop until tasks are done
         await asyncio.gather(send_task, receive_task)
 
+
     # Clean up PyAudio
     p.terminate()
+
+    # Read raw PCM data
+    with open("output_audio.raw", "rb") as raw_file:
+        raw_data = raw_file.read()
+
+    # Write to .wav
+    with wave.open("output_audio.wav", "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(frame_rate)
+        wav_file.writeframes(raw_data)
 
 asyncio.run(main())
