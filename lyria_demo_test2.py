@@ -1,3 +1,27 @@
+"""
+## Setup
+
+To install the dependencies for this script, run:
+
+```
+pip install pyaudio websockets
+```
+
+Before running this script, ensure the `GOOGLE_API_KEY` environment
+variable is set to the api-key you obtained from Google AI Studio.
+
+## Run
+
+To run the script:
+
+```
+python LyriaRealTime_EAP.py
+```
+
+The script takes a prompt from the command line and streams the audio back over
+websockets.
+"""
+
 import asyncio
 import os
 import wave
