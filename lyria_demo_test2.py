@@ -45,7 +45,12 @@ FRAME_RATE = OUTPUT_RATE
 
 # Directory to save downloaded audio files
 DOWNLOAD_DIR = Path.cwd() / "Music Download Files"
-DOWNLOAD_DIR.mkdir(exist_ok=True)
+DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
+
+# Constants for the demo
+MAX_PLAY_SECONDS = 30      # hard cap per PLAY
+auto_stop_task: asyncio.Task | None = None   # will hold the running timer
+
 
 # Helper function to ask user if they want to save the audio clip
 def ask_to_download() -> tuple[bool, Path | None]:
@@ -60,6 +65,18 @@ def ask_to_download() -> tuple[bool, Path | None]:
             return False, None
         print("Please type y or n.")
 
+# Function to schedule an auto-stop after MAX_PLAY_SECONDS, will then basically press "q"
+# If user pressed "q" before this fires, it will be cancelled
+async def schedule_auto_stop(session, send_task):
+    try:
+        await asyncio.sleep(MAX_PLAY_SECONDS)
+        print(f"\n⏹  Auto-stopped after {MAX_PLAY_SECONDS}s (time cap reached).")
+        await session.stop() # same as 'q'
+        send_task.cancel() # make send() finish immediately
+    except asyncio.CancelledError:
+        # Timer was cancelled (user paused or quit before 30 s) — do nothing
+        pass
+
 # Main function to run the Lyria demo
 async def main() -> None:
     load_dotenv()
@@ -73,6 +90,9 @@ async def main() -> None:
     pcm_buffer = bytearray()
     pa = pyaudio.PyAudio()
     config = types.LiveMusicGenerationConfig()
+
+    # Define the auto-stop task globally so we can modify it
+    global auto_stop_task
 
     async with client.aio.live.music.connect(model=MODEL) as session:
 
@@ -105,22 +125,44 @@ async def main() -> None:
 
         # Sender function to handle user input
         async def send() -> None:
-            await asyncio.sleep(5) # let audio start
+            await asyncio.sleep(5)
+
+            global auto_stop_task # this will be mutated
             while True:
                 text = await asyncio.to_thread(input, " > ")
                 if not text:
                     continue
                 cmd = text.lower().strip()
 
+                # quit
                 if cmd == "q":
                     await session.stop()
-                    return # triggers FIRST_COMPLETED
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel() # clean up timer
+                    return # FIRST_COMPLETED
 
+                # ply/ pause
                 if cmd == "play":
-                    await session.play();  continue
-                if cmd == "pause":
-                    await session.pause(); continue
+                    await session.play()
 
+                    # restart 30-s countdown each time we (re)start playback
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel()
+                    auto_stop_task = asyncio.create_task(
+                        schedule_auto_stop(session, asyncio.current_task())  # pass *this* send() task
+                    )
+                    continue
+
+                # stop
+                if cmd == "pause":
+                    await session.pause()
+
+                    # stop the countdown while paused
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel()
+                    continue
+
+                # bpm
                 if cmd.startswith("bpm="):
                     bpm_val = cmd[4:]
                     if bpm_val == "auto":
@@ -129,11 +171,13 @@ async def main() -> None:
                         try:
                             config.bpm = int(bpm_val)
                         except ValueError:
-                            print("BPM must be int or AUTO");  continue
+                            print("BPM must be int or AUTO")
+                            continue
                     await session.set_music_generation_config(config=config)
                     await session.reset_context()
                     continue
 
+                # scale
                 if cmd.startswith("scale="):
                     scale_val = cmd.split("=", 1)[1].strip().upper()
                     if scale_val == "AUTO":
@@ -142,7 +186,8 @@ async def main() -> None:
                         try:
                             config.scale = types.Scale[scale_val]
                         except KeyError:
-                            print("Unknown scale");  continue
+                            print("Unknown scale")
+                            continue
                     await session.set_music_generation_config(config=config)
                     await session.reset_context()
                     continue
@@ -163,6 +208,7 @@ async def main() -> None:
                 await session.set_weighted_prompts(
                     prompts=[types.WeightedPrompt(text=text, weight=1.0)]
                 )
+
 
         # Init config and prompts
         try:
@@ -188,8 +234,17 @@ async def main() -> None:
         )
         await session.play()
 
+        # Start the auto-stop timer
+        # auto_stop_task = asyncio.create_task(schedule_auto_stop(session))
+
         # Run sender and receiver concurrently
-        send_t = asyncio.create_task(send(),    name="send")
+        send_t = asyncio.create_task(send(), name="send")  # sender first
+
+        auto_stop_task = asyncio.create_task(  # start 30-s timer
+            schedule_auto_stop(session, send_t)  # pass send_t handle
+        )
+
+        # Receiver task
         recv_t = asyncio.create_task(receive(), name="recv")
         done, _ = await asyncio.wait(
             {send_t, recv_t},
