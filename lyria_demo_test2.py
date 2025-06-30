@@ -1,18 +1,3 @@
-# -*- coding: utf-8 -*-
-# Copyright 2025 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """
 ## Setup
 
@@ -36,240 +21,258 @@ python LyriaRealTime_EAP.py
 The script takes a prompt from the command line and streams the audio back over
 websockets.
 """
+
 import asyncio
+import os
 import wave
+from datetime import datetime
+from pathlib import Path
+
 import pyaudio
 from dotenv import load_dotenv
-import os
 from google import genai
 from google.genai import types
 
+# Audio/model constants - from Google demo
+BUFFER_SECONDS = 1
+CHUNK = 4200
+FORMAT = pyaudio.paInt16
+CHANNELS = 2
+MODEL = "models/lyria-realtime-exp"
+OUTPUT_RATE = 48_000
+SAMPLE_WIDTH_BYTES = 2
+FRAME_RATE = OUTPUT_RATE
 
-# Longer buffer reduces chance of audio drop, but also delays audio and user commands.
-BUFFER_SECONDS=1
-CHUNK=4200
-FORMAT=pyaudio.paInt16
-CHANNELS=2
-MODEL='models/lyria-realtime-exp'
-OUTPUT_RATE=48000
+# Directory to save downloaded audio files
+DOWNLOAD_DIR = Path.cwd() / "Music Download Files"
+DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
 
-# Define audio parameters
-channels = 2
-sample_width = 2  # 16-bit audio = 2 bytes
-frame_rate = 48000
+# Constants for the demo
+MAX_PLAY_SECONDS = 30      # hard cap per PLAY
+auto_stop_task: asyncio.Task | None = None   # will hold the running timer
 
-load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
 
-if api_key is None:
-    print("Please enter your API key")
-    api_key = input("API Key: ").strip()
+# Helper function to ask user if they want to save the audio clip
+def ask_to_download() -> tuple[bool, Path | None]:
+    """Prompt the user to save the most-recent clip; return (save?, path)."""
+    while True:
+        resp = input("Save this performance to disk? [y/n] ").strip().lower()
+        if resp in {"y", "yes"}:
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            name = f"lyria_{ts}.wav"
+            return True, DOWNLOAD_DIR / name
+        if resp in {"n", "no"}:
+            return False, None
+        print("Please type y or n.")
 
-client = genai.Client(
-    api_key=api_key,
-    http_options={'api_version': 'v1alpha',}, # v1alpha since Lyria RealTime is only experimental
-)
+# Function to schedule an auto-stop after MAX_PLAY_SECONDS, will then basically press "q"
+# If user pressed "q" before this fires, it will be cancelled
+async def schedule_auto_stop(session, send_task):
+    try:
+        await asyncio.sleep(MAX_PLAY_SECONDS)
+        print(f"\n⏹  Auto-stopped after {MAX_PLAY_SECONDS}s (time cap reached).")
+        await session.stop() # same as 'q'
+        send_task.cancel() # make send() finish immediately
+    except asyncio.CancelledError:
+        # Timer was cancelled (user paused or quit before 30 s) — do nothing
+        pass
 
-async def main():
-    p = pyaudio.PyAudio()
+# Main function to run the Lyria demo
+async def main() -> None:
+    load_dotenv()
+    api_key = os.getenv("GOOGLE_API_KEY") or input("API Key: ").strip()
+
+    client = genai.Client(
+        api_key=api_key,
+        http_options={"api_version": "v1alpha"},
+    )
+
+    pcm_buffer = bytearray()
+    pa = pyaudio.PyAudio()
     config = types.LiveMusicGenerationConfig()
+
+    # Define the auto-stop task globally so we can modify it
+    global auto_stop_task
+
     async with client.aio.live.music.connect(model=MODEL) as session:
-        async def receive():
-            chunks_count = 0
-            output_stream = p.open(
-                format=FORMAT, channels=CHANNELS, rate=OUTPUT_RATE, output=True, frames_per_buffer=CHUNK)
-            audio_file = open("output_audio.raw", "wb")  # Save raw audio data
-            async for message in session.receive():
-                chunks_count += 1
-                if chunks_count == 1:
-                    # Introduce a delay before starting playback to have a buffer for network jitter.
-                    await asyncio.sleep(BUFFER_SECONDS)
-                # print("Received chunk: ", message)
-                if message.server_content:
-                # print("Received chunk with metadata: ", message.server_content.audio_chunks[0].source_metadata)
-                    audio_data = message.server_content.audio_chunks[0].data
-                    output_stream.write(audio_data)
-                    audio_file.write(audio_data)
-                elif message.filtered_prompt:
-                    print("Prompt was filtered out: ", message.filtered_prompt)
-                else:
-                    print("Unknown error occured with message: ", message)
-                await asyncio.sleep(10**-12)
-            audio_file.close()
 
-        async def send():
-            await asyncio.sleep(5) # Allow initial prompt to play a bit
+        # Receiver function to handle incoming audio
+        async def receive() -> None:
+            chunks = 0
+            stream = pa.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=OUTPUT_RATE,
+                output=True,
+                frames_per_buffer=CHUNK,
+            )
+            try:
+                async for msg in session.receive():
+                    if msg.server_content:
+                        if chunks == 0:
+                            await asyncio.sleep(BUFFER_SECONDS)
+                        chunks += 1
+                        data = msg.server_content.audio_chunks[0].data
+                        stream.write(data)
+                        pcm_buffer.extend(data)
+                    elif msg.filtered_prompt:
+                        print("Prompt filtered:", msg.filtered_prompt)
+            except asyncio.CancelledError:
+                # task cancelled by main; just exit cleanly
+                pass
+            finally:
+                stream.close()
 
+        # Sender function to handle user input
+        async def send() -> None:
+            await asyncio.sleep(5)
+
+            global auto_stop_task # this will be mutated
             while True:
-                print("Set new prompt ((bpm=<number|'AUTO'>, scale=<enum|'AUTO'>, top_k=<number|'AUTO'>, 'play', 'pause', 'prompt1:w1,prompt2:w2,...', or single text prompt)")
-                prompt_str = await asyncio.to_thread(
-                    input,
-                    " > "
-                )
-
-                if not prompt_str: # Skip empty input
+                text = await asyncio.to_thread(input, " > ")
+                if not text:
                     continue
+                cmd = text.lower().strip()
 
-                if prompt_str.lower() == 'q':
-                    print("Sending STOP command.")
-                    await session.stop();
-                    return False
+                # quit
+                if cmd == "q":
+                    await session.stop()
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel() # clean up timer
+                    return # FIRST_COMPLETED
 
-                if prompt_str.lower() == 'play':
-                    print("Sending PLAY command.")
+                # ply/ pause
+                if cmd == "play":
                     await session.play()
+
+                    # restart 30-s countdown each time we (re)start playback
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel()
+                    auto_stop_task = asyncio.create_task(
+                        schedule_auto_stop(session, asyncio.current_task())  # pass *this* send() task
+                    )
                     continue
 
-                if prompt_str.lower() == 'pause':
-                    print("Sending PAUSE command.")
+                # stop
+                if cmd == "pause":
                     await session.pause()
+
+                    # stop the countdown while paused
+                    if auto_stop_task and not auto_stop_task.done():
+                        auto_stop_task.cancel()
                     continue
 
-                if prompt_str.startswith('bpm='):
-                  if prompt_str.strip().endswith('AUTO'):
-                    del config.bpm
-                    print(f"Setting BPM to AUTO, which requires resetting context.")
-                  else:
-                    bpm_value = int(prompt_str.removeprefix('bpm='))
-                    print(f"Setting BPM to {bpm_value}, which requires resetting context.")
-                    config.bpm=bpm_value
-                  await session.set_music_generation_config(config=config)
-                  await session.reset_context()
-                  continue
-
-                if prompt_str.startswith('scale='):
-                  if prompt_str.strip().endswith('AUTO'):
-                    del config.scale
-                    print(f"Setting Scale to AUTO, which requires resetting context.")
-                  else:
-                    found_scale_enum_member = None
-                    for scale_member in types.Scale: # types.Scale is an enum
-                        if scale_member.name.lower() == prompt_str.lower():
-                            found_scale_enum_member = scale_member
-                            break
-                    if found_scale_enum_member:
-                        print(f"Setting scale to {found_scale_enum_member.name}, which requires resetting context.")
-                        config.scale = found_scale_enum_member
+                # bpm
+                if cmd.startswith("bpm="):
+                    bpm_val = cmd[4:]
+                    if bpm_val == "auto":
+                        config.bpm = None
                     else:
-                        print("Error: Matching enum not found.")
-                  await session.set_music_generation_config(config=config)
-                  await session.reset_context()
-                  continue
-
-                if prompt_str.startswith('top_k='):
-                    top_k_value = int(prompt_str.removeprefix('top_k='))
-                    print(f"Setting TopK to {top_k_value}.")
-                    config.top_k = top_k_value
+                        try:
+                            config.bpm = int(bpm_val)
+                        except ValueError:
+                            print("BPM must be int or AUTO")
+                            continue
                     await session.set_music_generation_config(config=config)
                     await session.reset_context()
                     continue
 
-                # Check for multiple weighted prompts "prompt1:number1, prompt2:number2, ..."
-                if ":" in prompt_str:
-                    parsed_prompts = []
-                    segments = prompt_str.split(',')
-                    malformed_segment_exists = False # Tracks if any segment had a parsing error
-
-                    for segment_str_raw in segments:
-                        segment_str = segment_str_raw.strip()
-                        if not segment_str: # Skip empty segments (e.g., from "text1:1, , text2:2")
+                # scale
+                if cmd.startswith("scale="):
+                    scale_val = cmd.split("=", 1)[1].strip().upper()
+                    if scale_val == "AUTO":
+                        config.scale = None
+                    else:
+                        try:
+                            config.scale = types.Scale[scale_val]
+                        except KeyError:
+                            print("Unknown scale")
                             continue
-
-                        # Split on the first colon only, in case prompt text itself contains colons
-                        parts = segment_str.split(':', 1)
-
-                        if len(parts) == 2:
-                            text_p = parts[0].strip()
-                            weight_s = parts[1].strip()
-
-                            if not text_p: # Prompt text should not be empty
-                                print(f"Error: Empty prompt text in segment '{segment_str_raw}'. Skipping this segment.")
-                                malformed_segment_exists = True
-                                continue # Skip this malformed segment
-                            try:
-                                weight_f = float(weight_s) # Weights are floats
-                                parsed_prompts.append(types.WeightedPrompt(text=text_p, weight=weight_f))
-                            except ValueError:
-                                print(f"Error: Invalid weight '{weight_s}' in segment '{segment_str_raw}'. Must be a number. Skipping this segment.")
-                                malformed_segment_exists = True
-                                continue # Skip this malformed segment
-                        else:
-                            # This segment is not in "text:weight" format.
-                            print(f"Error: Segment '{segment_str_raw}' is not in 'text:weight' format. Skipping this segment.")
-                            malformed_segment_exists = True
-                            continue # Skip this malformed segment
-
-                    if parsed_prompts: # If at least one prompt was successfully parsed.
-                        prompt_repr = [f"'{p.text}':{p.weight}" for p in parsed_prompts]
-                        if malformed_segment_exists:
-                            print(f"Partially sending {len(parsed_prompts)} valid weighted prompt(s) due to errors in other segments: {', '.join(prompt_repr)}")
-                        else:
-                            print(f"Sending multiple weighted prompts: {', '.join(prompt_repr)}")
-                        await session.set_weighted_prompts(prompts=parsed_prompts)
-                    else: # No valid prompts were parsed from the input string that contained ":"
-                        print("Error: Input contained ':' suggesting multi-prompt format, but no valid 'text:weight' segments were successfully parsed. No action taken.")
-
+                    await session.set_music_generation_config(config=config)
+                    await session.reset_context()
                     continue
 
-                # If none of the above, treat as a regular single text prompt
-                print(f"Sending single text prompt: \"{prompt_str}\"")
+                # multi-prompt "text:weight"
+                if ":" in text:
+                    pr = []
+                    for seg in text.split(","):
+                        if not seg.strip():
+                            continue
+                        t, w = seg.split(":", 1)
+                        pr.append(types.WeightedPrompt(text=t.strip(),
+                                                       weight=float(w)))
+                    await session.set_weighted_prompts(prompts=pr)
+                    continue
+
+                # single prompt
                 await session.set_weighted_prompts(
-                    prompts=[types.WeightedPrompt(text=prompt_str, weight=1.0)]
+                    prompts=[types.WeightedPrompt(text=text, weight=1.0)]
                 )
 
-        # Get user input for BPM, Key (Scale), and Prompt
-        bpm_str = await asyncio.to_thread(input, "Enter BPM (e.g., 120, or press Enter for default): ")
+
+        # Init config and prompts
         try:
-            config.bpm = int(bpm_str)
+            config.bpm = int(await asyncio.to_thread(
+                input, "BPM (blank=120): ") or 120)
         except ValueError:
-            print("No/invalid BPM entered, using default 120.")
             config.bpm = 120
 
-        print("Available scales:")
-        scale_options = {str(i + 1): member for i, member in enumerate(types.Scale)}
-        for i, member in enumerate(types.Scale):
-            print(f"{i + 1}: {member.name}")
-
-        scale_choice_str = await asyncio.to_thread(input, f"Enter the number for your desired scale (or press Enter for default A_FLAT_MAJOR_F_MINOR): ")
-        if scale_choice_str in scale_options:
-            config.scale = scale_options[scale_choice_str]
-        else:
-            print("Invalid selection or no input. Using default scale.")
-            config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR
-
-        initial_prompt = await asyncio.to_thread(input, "Enter an initial prompt (e.g., 'Piano solo', or press Enter for default): ")
-        if not initial_prompt:
-            initial_prompt = "Piano"
-            print("No prompt entered, using default: 'Piano'")
-
-        print(f"Setting initial BPM to {config.bpm}, scale to {config.scale.name}, and prompt to '{initial_prompt}'")
-        await session.set_music_generation_config(config=config)
-        await session.set_weighted_prompts(
-            prompts=[types.WeightedPrompt(text=initial_prompt, weight=1.0)]
+        print("Scales:")
+        for i, s in enumerate(types.Scale, 1):
+            print(f" {i}: {s.name}")
+        sel = await asyncio.to_thread(input, "Scale #: ")
+        config.scale = (
+            list(types.Scale)[int(sel)-1]
+            if sel.isdigit() and 1 <= int(sel) <= len(types.Scale)
+            else types.Scale.A_FLAT_MAJOR_F_MINOR
         )
 
-        print(f"Let's get the party started!")
+        init = await asyncio.to_thread(input, "Initial prompt (blank='Piano'): ") or "Piano"
+        await session.set_music_generation_config(config=config)
+        await session.set_weighted_prompts(
+            prompts=[types.WeightedPrompt(text=init, weight=1.0)]
+        )
         await session.play()
 
-        send_task = asyncio.create_task(send())
-        receive_task = asyncio.create_task(receive())
+        # Start the auto-stop timer
+        # auto_stop_task = asyncio.create_task(schedule_auto_stop(session))
 
-        # Don't quit the loop until tasks are done
-        await asyncio.gather(send_task, receive_task)
+        # Run sender and receiver concurrently
+        send_t = asyncio.create_task(send(), name="send")  # sender first
 
+        auto_stop_task = asyncio.create_task(  # start 30-s timer
+            schedule_auto_stop(session, send_t)  # pass send_t handle
+        )
+
+        # Receiver task
+        recv_t = asyncio.create_task(receive(), name="recv")
+        done, _ = await asyncio.wait(
+            {send_t, recv_t},
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        # cancel any task still running
+        for t in (send_t, recv_t):
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(send_t, recv_t, return_exceptions=True)
 
     # Clean up PyAudio
-    p.terminate()
+    pa.terminate()
 
-    # Read raw PCM data
-    with open("output_audio.raw", "rb") as raw_file:
-        raw_data = raw_file.read()
+    # Always ask—buffer may be empty if user quit immediately
+    save, path = ask_to_download()
+    if save:
+        if pcm_buffer:
+            with wave.open(str(path), "wb") as w:
+                w.setnchannels(CHANNELS)
+                w.setsampwidth(SAMPLE_WIDTH_BYTES)
+                w.setframerate(FRAME_RATE)
+                w.writeframes(pcm_buffer)
+            print(f"Saved ✔️  {path}")
+        else:
+            print("No audio captured—nothing to save.")
+    else:
+        print("Clip discarded.")
 
-    # Write to .wav
-    with wave.open("output_audio.wav", "wb") as wav_file:
-        wav_file.setnchannels(channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(frame_rate)
-        wav_file.writeframes(raw_data)
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
