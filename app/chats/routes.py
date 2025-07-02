@@ -1,8 +1,17 @@
-from flask import Blueprint, jsonify, request, make_response, send_file
+from flask import Blueprint, jsonify, request, make_response, send_file, abort
 from ..models import Chat, Messages
 from .. import db
+from app.chats.lyria_demo_test2 import generate_audio
+import os
+import time
+import asyncio
+import os
+from pathlib import Path
 
 routes_bp = Blueprint('routes', __name__)
+
+music_folder = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', '..', 'MusicDownloadFiles'))
+
 
 def commit(new_obj, action = "add"):   
     if action == "add":
@@ -12,6 +21,10 @@ def commit(new_obj, action = "add"):
         db.session.delete(new_obj)
         db.session.commit()
 
+
+def create_a_message_and_send_prompt(prompt, chat_id, data, prompt_id):
+    print(data)
+    asyncio.run(generate_audio(data["bpm"], data["key"], prompt, chat_id, prompt_id))
 
 # chat functionality
 @routes_bp.route('/chat')
@@ -32,8 +45,11 @@ def get_chats():
 def delete_chat(id):
     try:
         chat = Chat.query.get(id)
+        
         if not chat:
             return make_response(jsonify({"message": "Chat is not found"}), 404)
+        messages = chat.messages
+
         commit(chat, "delete")
         return '', 204
     except Exception as e:
@@ -56,30 +72,37 @@ def update_chat_name(id):
 # since the new chat will start with the first message sent, then adding a message should be able to add a convo object to db
 @routes_bp.route('/talk', methods=['POST'])
 def post_chats():
-    file_path = '../static/static/lyria_20250629-201209.wav'
     data = request.get_json()
-    
-    if not data or 'content' not in data:
+    if not data or 'prompt' not in data:
         return jsonify({"error": "Missing message content"})
     if 'chat' not in data:
         number_of_chats = Chat.query.count()
-        new_convo = Chat(title=f"Chat {number_of_chats}", user_id = 1)
-        commit(new_convo)
+        new_chat = Chat(title=f"Chat {number_of_chats}", user_id = 1)
+        commit(new_chat)
         # Here we would have a process that gives us music
-        new_exchange = Messages(role="user", content=data["content"], convo=new_convo.id)
+        new_exchange = Messages(role="user", content=data["prompt"], convo=new_chat.id)
         
         commit(new_exchange)
-        return make_response(jsonify({"new_convo": new_convo.id}), 200)
+
+        # create_a_message_and_send_prompt(new_exchange.content, new_chat.id, data, new_exchange.id)
+        return make_response(jsonify({"new_chat": new_chat.id}), 200)
     # Here we would have a process that gives us music
     else:
-        new_exchange = Messages(role="user", content=data["content"], convo=data["chat"])
+        new_exchange = Messages(role="user", content=data["prompt"], convo=data["chat"])
         commit(new_exchange)
+
+        create_a_message_and_send_prompt(new_exchange.content, data["chat"], data, new_exchange.id)
+
         return make_response(jsonify({"message": "New message created"}), 200)
     
-@routes_bp.route('/get-audio')
-def get_audio():
-    file_path = '../static/lyria_20250629-201209.wav'
-    return send_file(file_path, mimetype='audio/wav')
+@routes_bp.route('/get-audio/<int:chat_id>/<int:message_id>')
+def get_audio(chat_id, message_id):
+    file_path = f'/home/pol/projects/caps/backend/MusicDownloadFiles/lyria_{chat_id}_{message_id}.wav'
+    try :
+        return send_file(file_path, mimetype='audio/wav')
+    except FileNotFoundError:
+        return make_response(jsonify({'message': 'No audio available'}), 404)
+   
 
 @routes_bp.route('/getmessages/<int:id>')
 def get_messages(id):
