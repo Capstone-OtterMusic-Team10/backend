@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, make_response, send_file, abort
+from flask import Blueprint, jsonify, request, make_response, send_file
 from ..models import Chat, Messages
 from .. import db
 from app.chats.lyria_demo_test2 import generate_audio
@@ -7,6 +7,7 @@ import time
 import asyncio
 import os
 from pathlib import Path
+from threading import Thread
 
 routes_bp = Blueprint('routes', __name__)
 
@@ -63,6 +64,7 @@ def update_chat_name(id):
         if 'title' in data:
             chat.title = data['title']
             db.session.commit()
+            
             return make_response(jsonify({"message": "Update successful"}, 200))
         return make_response(jsonify({'message': "No new name identified"}), 400)
     except Exception as e:
@@ -84,15 +86,16 @@ def post_chats():
         
         commit(new_exchange)
 
-        # create_a_message_and_send_prompt(new_exchange.content, new_chat.id, data, new_exchange.id)
+        
+        Thread(target=create_a_message_and_send_prompt, args=(new_exchange.content, new_chat.id, data, new_exchange.id)
+).start()
         return make_response(jsonify({"new_chat": new_chat.id}), 200)
     # Here we would have a process that gives us music
     else:
         new_exchange = Messages(role="user", content=data["prompt"], convo=data["chat"])
         commit(new_exchange)
-
-        create_a_message_and_send_prompt(new_exchange.content, data["chat"], data, new_exchange.id)
-
+        
+        Thread(target=create_a_message_and_send_prompt, args=(new_exchange.content, data["chat"], data, new_exchange.id)).start()
         return make_response(jsonify({"message": "New message created"}), 200)
     
 @routes_bp.route('/get-audio/<int:chat_id>/<int:message_id>')
