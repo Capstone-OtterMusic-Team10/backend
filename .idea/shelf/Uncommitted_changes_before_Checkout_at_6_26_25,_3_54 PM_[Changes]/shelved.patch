@@ -1,0 +1,84 @@
+Index: lyria_demo_test2.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># -*- coding: utf-8 -*-\n# Copyright 2025 Google LLC\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n\n\"\"\"\n## Setup\n\nTo install the dependencies for this script, run:\n\n```\npip install pyaudio websockets\n```\n\nBefore running this script, ensure the `GOOGLE_API_KEY` environment\nvariable is set to the api-key you obtained from Google AI Studio.\n\n## Run\n\nTo run the script:\n\n```\npython LyriaRealTime_EAP.py\n```\n\nThe script takes a prompt from the command line and streams the audio back over\nwebsockets.\n\"\"\"\nimport asyncio\nimport pyaudio\nimport os\nfrom google import genai\nfrom google.genai import types\n\n# Longer buffer reduces chance of audio drop, but also delays audio and user commands.\nBUFFER_SECONDS=1\nCHUNK=4200\nFORMAT=pyaudio.paInt16\nCHANNELS=2\nMODEL='models/lyria-realtime-exp'\nOUTPUT_RATE=48000\n\napi_key = os.environ.get(\"GOOGLE_API_KEY\")\n\nif api_key is None:\n    print(\"Please enter your API key\")\n    api_key = input(\"API Key: \").strip()\n\nclient = genai.Client(\n    api_key=api_key,\n    http_options={'api_version': 'v1alpha',}, # v1alpha since Lyria RealTime is only experimental\n)\n\nasync def main():\n    p = pyaudio.PyAudio()\n    config = types.LiveMusicGenerationConfig()\n    async with client.aio.live.music.connect(model=MODEL) as session:\n        async def receive():\n            chunks_count = 0\n            output_stream = p.open(\n                format=FORMAT, channels=CHANNELS, rate=OUTPUT_RATE, output=True, frames_per_buffer=CHUNK)\n            async for message in session.receive():\n                chunks_count += 1\n                if chunks_count == 1:\n                    # Introduce a delay before starting playback to have a buffer for network jitter.\n                    await asyncio.sleep(BUFFER_SECONDS)\n                # print(\"Received chunk: \", message)\n                if message.server_content:\n                # print(\"Received chunk with metadata: \", message.server_content.audio_chunks[0].source_metadata)\n                    audio_data = message.server_content.audio_chunks[0].data\n                    output_stream.write(audio_data)\n                elif message.filtered_prompt:\n                    print(\"Prompt was filtered out: \", message.filtered_prompt)\n                else:\n                    print(\"Unknown error occured with message: \", message)\n                await asyncio.sleep(10**-12)\n\n        async def send():\n            await asyncio.sleep(5) # Allow initial prompt to play a bit\n\n            while True:\n                print(\"Set new prompt ((bpm=<number|'AUTO'>, scale=<enum|'AUTO'>, top_k=<number|'AUTO'>, 'play', 'pause', 'prompt1:w1,prompt2:w2,...', or single text prompt)\")\n                prompt_str = await asyncio.to_thread(\n                    input,\n                    \" > \"\n                )\n\n                if not prompt_str: # Skip empty input\n                    continue\n\n                if prompt_str.lower() == 'q':\n                    print(\"Sending STOP command.\")\n                    await session.stop();\n                    return False\n\n                if prompt_str.lower() == 'play':\n                    print(\"Sending PLAY command.\")\n                    await session.play()\n                    continue\n\n                if prompt_str.lower() == 'pause':\n                    print(\"Sending PAUSE command.\")\n                    await session.pause()\n                    continue\n\n                if prompt_str.startswith('bpm='):\n                  if prompt_str.strip().endswith('AUTO'):\n                    del config.bpm\n                    print(f\"Setting BPM to AUTO, which requires resetting context.\")\n                  else:\n                    bpm_value = int(prompt_str.removeprefix('bpm='))\n                    print(f\"Setting BPM to {bpm_value}, which requires resetting context.\")\n                    config.bpm=bpm_value\n                  await session.set_music_generation_config(config=config)\n                  await session.reset_context()\n                  continue\n\n                if prompt_str.startswith('scale='):\n                  if prompt_str.strip().endswith('AUTO'):\n                    del config.scale\n                    print(f\"Setting Scale to AUTO, which requires resetting context.\")\n                  else:\n                    found_scale_enum_member = None\n                    for scale_member in types.Scale: # types.Scale is an enum\n                        if scale_member.name.lower() == prompt_str.lower():\n                            found_scale_enum_member = scale_member\n                            break\n                    if found_scale_enum_member:\n                        print(f\"Setting scale to {found_scale_enum_member.name}, which requires resetting context.\")\n                        config.scale = found_scale_enum_member\n                    else:\n                        print(\"Error: Matching enum not found.\")\n                  await session.set_music_generation_config(config=config)\n                  await session.reset_context()\n                  continue\n\n                if prompt_str.startswith('top_k='):\n                    top_k_value = int(prompt_str.removeprefix('top_k='))\n                    print(f\"Setting TopK to {top_k_value}.\")\n                    config.top_k = top_k_value\n                    await session.set_music_generation_config(config=config)\n                    await session.reset_context()\n                    continue\n\n                # Check for multiple weighted prompts \"prompt1:number1, prompt2:number2, ...\"\n                if \":\" in prompt_str:\n                    parsed_prompts = []\n                    segments = prompt_str.split(',')\n                    malformed_segment_exists = False # Tracks if any segment had a parsing error\n\n                    for segment_str_raw in segments:\n                        segment_str = segment_str_raw.strip()\n                        if not segment_str: # Skip empty segments (e.g., from \"text1:1, , text2:2\")\n                            continue\n\n                        # Split on the first colon only, in case prompt text itself contains colons\n                        parts = segment_str.split(':', 1)\n\n                        if len(parts) == 2:\n                            text_p = parts[0].strip()\n                            weight_s = parts[1].strip()\n\n                            if not text_p: # Prompt text should not be empty\n                                print(f\"Error: Empty prompt text in segment '{segment_str_raw}'. Skipping this segment.\")\n                                malformed_segment_exists = True\n                                continue # Skip this malformed segment\n                            try:\n                                weight_f = float(weight_s) # Weights are floats\n                                parsed_prompts.append(types.WeightedPrompt(text=text_p, weight=weight_f))\n                            except ValueError:\n                                print(f\"Error: Invalid weight '{weight_s}' in segment '{segment_str_raw}'. Must be a number. Skipping this segment.\")\n                                malformed_segment_exists = True\n                                continue # Skip this malformed segment\n                        else:\n                            # This segment is not in \"text:weight\" format.\n                            print(f\"Error: Segment '{segment_str_raw}' is not in 'text:weight' format. Skipping this segment.\")\n                            malformed_segment_exists = True\n                            continue # Skip this malformed segment\n\n                    if parsed_prompts: # If at least one prompt was successfully parsed.\n                        prompt_repr = [f\"'{p.text}':{p.weight}\" for p in parsed_prompts]\n                        if malformed_segment_exists:\n                            print(f\"Partially sending {len(parsed_prompts)} valid weighted prompt(s) due to errors in other segments: {', '.join(prompt_repr)}\")\n                        else:\n                            print(f\"Sending multiple weighted prompts: {', '.join(prompt_repr)}\")\n                        await session.set_weighted_prompts(prompts=parsed_prompts)\n                    else: # No valid prompts were parsed from the input string that contained \":\"\n                        print(\"Error: Input contained ':' suggesting multi-prompt format, but no valid 'text:weight' segments were successfully parsed. No action taken.\")\n\n                    continue\n\n                # If none of the above, treat as a regular single text prompt\n                print(f\"Sending single text prompt: \\\"{prompt_str}\\\"\")\n                await session.set_weighted_prompts(\n                    prompts=[types.WeightedPrompt(text=prompt_str, weight=1.0)]\n                )\n\n        print(\"Starting with some piano\")\n        await session.set_weighted_prompts(\n            prompts=[types.WeightedPrompt(text=\"Piano\", weight=1.0)]\n        )\n\n        # Set initial BPM and Scale\n        config.bpm = 120\n        config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR # Example initial scale\n        print(f\"Setting initial BPM to {config.bpm} and scale to {config.scale.name}\")\n        await session.set_music_generation_config(config=config)\n\n        print(f\"Let's get the party started!\")\n        await session.play()\n\n        send_task = asyncio.create_task(send())\n        receive_task = asyncio.create_task(receive())\n\n        # Don't quit the loop until tasks are done\n        await asyncio.gather(send_task, receive_task)\n\n    # Clean up PyAudio\n    p.terminate()\n\nasyncio.run(main())
+===================================================================
+diff --git a/lyria_demo_test2.py b/lyria_demo_test2.py
+--- a/lyria_demo_test2.py	
++++ b/lyria_demo_test2.py	
+@@ -38,10 +38,12 @@
+ """
+ import asyncio
+ import pyaudio
++from dotenv import load_dotenv
+ import os
+ from google import genai
+ from google.genai import types
+ 
++
+ # Longer buffer reduces chance of audio drop, but also delays audio and user commands.
+ BUFFER_SECONDS=1
+ CHUNK=4200
+@@ -50,7 +52,8 @@
+ MODEL='models/lyria-realtime-exp'
+ OUTPUT_RATE=48000
+ 
+-api_key = os.environ.get("GOOGLE_API_KEY")
++load_dotenv()
++api_key = os.getenv("GOOGLE_API_KEY")
+ 
+ if api_key is None:
+     print("Please enter your API key")
+@@ -205,16 +208,36 @@
+                     prompts=[types.WeightedPrompt(text=prompt_str, weight=1.0)]
+                 )
+ 
+-        print("Starting with some piano")
+-        await session.set_weighted_prompts(
+-            prompts=[types.WeightedPrompt(text="Piano", weight=1.0)]
+-        )
+-
+-        # Set initial BPM and Scale
+-        config.bpm = 120
+-        config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR # Example initial scale
+-        print(f"Setting initial BPM to {config.bpm} and scale to {config.scale.name}")
++        # Get user input for BPM, Key (Scale), and Prompt
++        bpm_str = await asyncio.to_thread(input, "Enter BPM (e.g., 120, or press Enter for default): ")
++        try:
++            config.bpm = int(bpm_str)
++        except ValueError:
++            print("No/invalid BPM entered, using default 120.")
++            config.bpm = 120
++
++        print("Available scales:")
++        scale_options = {str(i + 1): member for i, member in enumerate(types.Scale)}
++        for i, member in enumerate(types.Scale):
++            print(f"{i + 1}: {member.name}")
++
++        scale_choice_str = await asyncio.to_thread(input, f"Enter the number for your desired scale (or press Enter for default A_FLAT_MAJOR_F_MINOR): ")
++        if scale_choice_str in scale_options:
++            config.scale = scale_options[scale_choice_str]
++        else:
++            print("Invalid selection or no input. Using default scale.")
++            config.scale = types.Scale.A_FLAT_MAJOR_F_MINOR
++
++        initial_prompt = await asyncio.to_thread(input, "Enter an initial prompt (e.g., 'Piano solo', or press Enter for default): ")
++        if not initial_prompt:
++            initial_prompt = "Piano"
++            print("No prompt entered, using default: 'Piano'")
++
++        print(f"Setting initial BPM to {config.bpm}, scale to {config.scale.name}, and prompt to '{initial_prompt}'")
+         await session.set_music_generation_config(config=config)
++        await session.set_weighted_prompts(
++            prompts=[types.WeightedPrompt(text=initial_prompt, weight=1.0)]
++        )
+ 
+         print(f"Let's get the party started!")
+         await session.play()
+@@ -228,4 +251,4 @@
+     # Clean up PyAudio
+     p.terminate()
+ 
+-asyncio.run(main())
+\ No newline at end of file
++asyncio.run(main())
