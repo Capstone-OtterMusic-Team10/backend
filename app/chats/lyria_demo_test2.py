@@ -24,11 +24,13 @@ websockets.
 
 import asyncio
 import os
+import threading
 import wave
 from datetime import datetime
 from pathlib import Path
 import sys
 import pyaudio
+import subprocess
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -47,9 +49,58 @@ FRAME_RATE = OUTPUT_RATE
 DOWNLOAD_DIR = Path.cwd() / "MusicDownloadFiles"
 DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
 
+# Demucs separation constants
+CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
+BASE_DIR = Path.cwd()
+SEPARATED_DIR = BASE_DIR / "separated_music"
+DEMUCS_MODEL_NAME = "htdemucs_ft" # music model!
+
+# Ensure the output directory exists
+SEPARATED_DIR.mkdir(exist_ok=True)
+
 # Constants for the demo
 MAX_PLAY_SECONDS = 30      # hard cap per PLAY
 auto_stop_task: asyncio.Task | None = None   # will hold the running timer
+
+# Run Demucs separation in a background thread to avoid blocking the API.
+def run_demucs_in_background(input_path, output_path):
+    python_executable = os.path.join(CONDA_ENV_PATH, "bin/python")
+    script_path = BASE_DIR / "separator.py"
+
+    if not os.path.exists(python_executable):
+        print(f"FATAL ERROR: Conda python executable not found at {python_executable}")
+        return
+
+    command = [python_executable, str(script_path), str(input_path), str(output_path)]
+
+    print(f"Starting background Demucs process: {' '.join(command)}")
+    # Use Popen to run the command in the background
+    subprocess.Popen(command)
+    print("Background Demucs process started.")
+
+# Start Demucs separation immediately after Lyria generates audio.
+# This runs in the background so users don't have to wait when they get to the mixer page
+def start_demucs_separation_after_lyria(chat_id, prompt_id):
+    try:
+        input_filename = f"lyria_{chat_id}_{prompt_id}.wav"
+        input_path = DOWNLOAD_DIR / input_filename
+        
+        if not input_path.exists():
+            print(f" Audio file not found: {input_path}")
+            return
+        
+        # Start Demucs separation in background
+        thread = threading.Thread(
+            target=run_demucs_in_background, 
+            args=(input_path, SEPARATED_DIR)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        print(f" Started Demucs separation for {input_filename} in background")
+        
+    except Exception as e:
+        print(f" Failed to start Demucs separation: {e}")
 
 
 # Helper function to ask user if they want to save the audio clip
@@ -258,6 +309,10 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
                 w.setframerate(FRAME_RATE)
                 w.writeframes(pcm_buffer)
             print(f"Saved ✔️  {path}")
+            
+            # Start Demucs separation immediately after saving the audio
+            start_demucs_separation_after_lyria(chat_id, prompt_id)
+            
             sys.exit(0)
         else:
             print("No audio captured—nothing to save.")
@@ -265,8 +320,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
     else:
         print("Clip discarded.")
         sys.exit(1)
-
-
 
 
 # prompt = input("Enter music prompt <<< ")
