@@ -7,7 +7,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     email = db.Column(db.String(254), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+    password = db.Column(db.String(255), nullable=True)  # Changed to nullable for OAuth users
 
 # conversation - will be the table containing individual conversation (as we might have many tracks per one)
 class Chat(db.Model):
@@ -48,7 +48,6 @@ class Audios(db.Model):
     chat = db.Column(db.Integer, db.ForeignKey("conversations.id"))
     prompt = db.Column(db.Integer, db.ForeignKey("messages.id"))
 
-# might not need it after all
 class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), unique=True, nullable=False)
