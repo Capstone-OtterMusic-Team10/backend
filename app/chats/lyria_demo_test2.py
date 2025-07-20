@@ -27,7 +27,7 @@ import os
 import wave
 from datetime import datetime
 from pathlib import Path
-
+import sys
 import pyaudio
 from dotenv import load_dotenv
 from google import genai
@@ -44,7 +44,7 @@ SAMPLE_WIDTH_BYTES = 2
 FRAME_RATE = OUTPUT_RATE
 
 # Directory to save downloaded audio files
-DOWNLOAD_DIR = Path.cwd() / "Music Download Files"
+DOWNLOAD_DIR = Path.cwd() / "MusicDownloadFiles"
 DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
 
 # Constants for the demo
@@ -53,17 +53,11 @@ auto_stop_task: asyncio.Task | None = None   # will hold the running timer
 
 
 # Helper function to ask user if they want to save the audio clip
-def ask_to_download() -> tuple[bool, Path | None]:
+def download(chat_id, prompt_id) -> tuple[bool, Path | None]:
     """Prompt the user to save the most-recent clip; return (save?, path)."""
     while True:
-        resp = input("Save this performance to disk? [y/n] ").strip().lower()
-        if resp in {"y", "yes"}:
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            name = f"lyria_{ts}.wav"
-            return True, DOWNLOAD_DIR / name
-        if resp in {"n", "no"}:
-            return False, None
-        print("Please type y or n.")
+        name = f"lyria_{chat_id}_{prompt_id}.wav"
+        return True, DOWNLOAD_DIR / name
 
 # Function to schedule an auto-stop after MAX_PLAY_SECONDS, will then basically press "q"
 # If user pressed "q" before this fires, it will be cancelled
@@ -78,7 +72,7 @@ async def schedule_auto_stop(session, send_task):
         pass
 
 # Main function to run the Lyria demo
-async def main() -> None:
+async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
     load_dotenv()
     api_key = os.getenv("GOOGLE_API_KEY") or input("API Key: ").strip()
 
@@ -212,25 +206,20 @@ async def main() -> None:
 
         # Init config and prompts
         try:
-            config.bpm = int(await asyncio.to_thread(
-                input, "BPM (blank=120): ") or 120)
+            config.bpm = bpm
         except ValueError:
             config.bpm = 120
 
-        print("Scales:")
-        for i, s in enumerate(types.Scale, 1):
-            print(f" {i}: {s.name}")
-        sel = await asyncio.to_thread(input, "Scale #: ")
-        config.scale = (
-            list(types.Scale)[int(sel)-1]
-            if sel.isdigit() and 1 <= int(sel) <= len(types.Scale)
-            else types.Scale.A_FLAT_MAJOR_F_MINOR
-        )
+        # print("Scales:")
+        # for i, s in enumerate(types.Scale, 1):
+        #     print(f" {i}: {s.name}")
+        # sel = await asyncio.to_thread(input, "Scale #: ")
+        config.scale = key
 
-        init = await asyncio.to_thread(input, "Initial prompt (blank='Piano'): ") or "Piano"
+        # init = await asyncio.to_thread(input, "Initial prompt (blank='Piano'): ") or "Piano"
         await session.set_music_generation_config(config=config)
         await session.set_weighted_prompts(
-            prompts=[types.WeightedPrompt(text=init, weight=1.0)]
+            prompts=[types.WeightedPrompt(text=prompt, weight=1.0)]
         )
         await session.play()
 
@@ -260,7 +249,7 @@ async def main() -> None:
     pa.terminate()
 
     # Always ask—buffer may be empty if user quit immediately
-    save, path = ask_to_download()
+    save, path = download(chat_id, prompt_id)
     if save:
         if pcm_buffer:
             with wave.open(str(path), "wb") as w:
@@ -269,10 +258,18 @@ async def main() -> None:
                 w.setframerate(FRAME_RATE)
                 w.writeframes(pcm_buffer)
             print(f"Saved ✔️  {path}")
+            sys.exit(0)
         else:
             print("No audio captured—nothing to save.")
+            sys.exit(1)
     else:
         print("Clip discarded.")
+        sys.exit(1)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
+
+
+# prompt = input("Enter music prompt <<< ")
+# asyncio.run(generate_audio(120, 2, prompt, 1, 1))
+# if __name__ == "__main__":
+#     asyncio.run(generate_audio())
