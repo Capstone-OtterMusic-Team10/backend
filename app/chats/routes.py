@@ -1,3 +1,7 @@
+from flask import Blueprint, jsonify, request, make_response, send_file
+from ..models import Chat, Messages, Audios, delete_prompt_and_audio
+from .. import db
+from app.chats.lyria_demo_test2 import generate_audio
 from flask import Blueprint, jsonify, request, make_response, redirect, url_for, session
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 from ..models import Chat, Messages, Audios, User
@@ -7,14 +11,52 @@ import os
 import time
 import asyncio
 import os
+import subprocess
+import threading
+from flask import send_from_directory
 from pathlib import Path
 from threading import Thread
+from flask import jsonify, send_file, abort, current_app
+from urllib.parse import unquote
+import math
 
 routes_bp = Blueprint('routes', __name__)
 
-music_folder = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', '..', 'MusicDownloadFiles'))
+music_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'MusicDownloadFiles'))
 
-def commit(new_obj, action = "add"):
+"""
+# Instructions to set up the environment (macOS)
+
+# Create the environment for Demucs
+conda create -n demucs-env python=3.10 -y
+
+# Activate it to install packages
+conda activate demucs-env
+
+# Install Demucs and its dependencies into the new environment
+conda install -c pytorch -c conda-forge demucs ffmpeg -y
+
+# Deactivate it when you're done
+conda deactivate
+
+"""
+
+
+CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
+
+# Folder Paths
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+SEPARATED_DIR = os.path.join(BASE_DIR, "separated_music")
+DEMUCS_MODEL_NAME = "htdemucs_ft" # The model used in separator.py
+
+# Ensure the output directory exists at startup
+os.makedirs(SEPARATED_DIR, exist_ok=True)
+
+# Use the absolute path to MusicDownloadFiles
+music_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'MusicDownloadFiles'))
+
+
+def commit(new_obj, action="add"):
     if action == "add":
         db.session.add(new_obj)
         db.session.commit()
@@ -223,3 +265,236 @@ def get_messages(id):
         return make_response(jsonify(message_list), 200)
     except Exception as e:
         return make_response(jsonify({"message": str(e)}), 500)
+
+# Delete a prompt (message) and all associated audio files.
+@routes_bp.route('/prompt/<int:prompt_id>', methods=['DELETE'])
+def delete_prompt_and_audio_route(prompt_id):
+    try:
+        delete_prompt_and_audio(db.session, prompt_id)
+        return make_response(jsonify({"message": f"Prompt {prompt_id} and associated audio files deleted."}), 200)
+    except Exception as e:
+        return make_response(jsonify({"error": str(e)}), 500)
+
+
+# List all audio files in the MusicDownloadFiles directory (API version)
+@routes_bp.route('/api/music-files', methods=['GET'])
+def api_music_files():
+
+    try:
+        if not os.path.exists(music_dir):
+            return jsonify({"files": []}), 200
+
+        audio_extensions = ('.wav', '.mp3', '.flac', '.m4a', '.ogg')
+        files = [
+            {"name": f}
+            for f in os.listdir(music_dir)
+            if f.lower().endswith(audio_extensions) and os.path.isfile(os.path.join(music_dir, f))
+        ]
+        return jsonify({"files": files}), 200
+
+    except Exception as e:
+        print(f"Error listing music files: {e}")
+        return jsonify({"error": "Failed to list files"}), 500
+
+
+# Get mixer data for a file, including separation status
+@routes_bp.route('/api/mixer/<filename>', methods=['GET'])
+def get_mixer_data(filename):
+    try:
+        # Get separation status directly
+        file_basename = os.path.splitext(filename)[0]
+        expected_dir = os.path.join(SEPARATED_DIR, DEMUCS_MODEL_NAME, file_basename)
+
+        if not os.path.isdir(expected_dir):
+            status_data = {"status": "not_started", "channels": []}
+            message = "Separation not started yet"
+        else:
+            # Check if all expected channels exist
+            expected_channels = ['drums', 'bass', 'other', 'vocals']
+            available_channels = []
+
+            for channel in expected_channels:
+                channel_file = os.path.join(expected_dir, f"{channel}.mp3")
+                if os.path.exists(channel_file):
+                    available_channels.append(channel)
+
+            if len(available_channels) == len(expected_channels):
+                status_data = {
+                    "status": "complete",
+                    "channels": available_channels,
+                    "message": "Separation complete and ready for mixing"
+                }
+            else:
+                status_data = {
+                    "status": "processing",
+                    "channels": available_channels,
+                    "message": f"Processing... {len(available_channels)}/{len(expected_channels)} channels ready"
+                }
+
+        return jsonify({
+            "filename": filename,
+            "separation_status": status_data,
+            "message": status_data.get("message", "Checking separation status...")
+        })
+    except Exception as e:
+        print(f"Error in get_mixer_data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Mixes the separated tracks using FFmpeg and returns the mixed audio file
+@routes_bp.route('/api/mix-and-download', methods=['POST'])
+def mix_and_download():
+    data = request.get_json()
+    filename = data.get('filename')
+    track_volumes = data.get('trackVolumes', {})
+
+    if not filename:
+        return jsonify({"error": "Filename is required"}), 400
+
+    try:
+        # Get the separated tracks directory
+        file_basename = os.path.splitext(filename)[0]
+        separated_dir = os.path.join(SEPARATED_DIR, DEMUCS_MODEL_NAME, file_basename)
+
+        if not os.path.exists(separated_dir):
+            return jsonify({"error": "Separated tracks not found"}), 404
+
+        # Create a temporary output file
+        output_filename = f"{file_basename}_mixed.wav"
+        output_path = os.path.join(SEPARATED_DIR, output_filename)
+
+        # Build FFmpeg command for mixing.
+        # mix drums, bass, and other (excluding vocals)
+        non_vocal_channels = ['drums', 'bass', 'other']
+        input_files = []
+        volume_filters = []
+
+        for i, channel in enumerate(non_vocal_channels):
+            channel_file = os.path.join(separated_dir, f"{channel}.mp3")
+            if os.path.exists(channel_file):
+                input_files.append(f"-i {channel_file}")
+                # Apply volume (convert from 0-1 to dB)
+                volume = track_volumes.get(channel, 1.0)
+                if volume > 0:
+                    volume_db = 20 * math.log10(volume)
+                    volume_filters.append(f"[{i}:a]volume={volume_db}dB[a{i}]")
+                else:
+                    volume_filters.append(f"[{i}:a]volume=0dB[a{i}]")
+
+        if not input_files:
+            return jsonify({"error": "No tracks found to mix"}), 404
+
+        # Build the FFmpeg filter complex
+        filter_complex = ";".join(volume_filters)
+        if len(input_files) > 1:
+            # Mix multiple tracks
+            mix_inputs = "".join([f"[a{i}]" for i in range(len(input_files))])
+            filter_complex += f";{mix_inputs}amix=inputs={len(input_files)}:duration=longest[out]"
+        else:
+            # Single track
+            filter_complex += ";[a0]copy[out]"
+
+        # Construct the full FFmpeg command
+        input_args = " ".join(input_files)
+        ffmpeg_cmd = f'ffmpeg {input_args} -filter_complex "{filter_complex}" -map "[out]" -y "{output_path}"'
+
+        print(f"Running FFmpeg command: {ffmpeg_cmd}")
+
+        # Execute FFmpeg command
+        result = subprocess.run(ffmpeg_cmd, shell=True, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"FFmpeg error: {result.stderr}")
+            return jsonify({"error": f"FFmpeg mixing failed: {result.stderr}"}), 500
+
+        if not os.path.exists(output_path):
+            return jsonify({"error": "Failed to create mixed audio file"}), 500
+
+        # Return the mixed file
+        return send_file(
+            output_path,
+            mimetype='audio/wav',
+            as_attachment=True,
+            download_name=output_filename
+        )
+
+    except Exception as e:
+        print(f"Error mixing audio: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# CORS headers for all routes
+@routes_bp.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+
+# Helper Function to run Demucs in a background thread to avoid blocking the API
+def run_demucs_in_background(input_path, output_path):
+
+    python_executable = os.path.join(CONDA_ENV_PATH, "bin/python")
+    # Make sure separator.py is in rooot
+    script_path = os.path.join(BASE_DIR, "separator.py")
+
+    if not os.path.exists(python_executable):
+        print(f"FATAL ERROR: Conda python executable not found at {python_executable}")
+        return
+
+    command = [python_executable, script_path, input_path, output_path]
+
+    print(f"Starting background process: {' '.join(command)}")
+    # Use Popen to run the command in the background
+    subprocess.Popen(command)
+    print("Background process started.")
+
+# Demucs separation routes
+
+# # Starts the Demucs separation process for a given file.
+# @routes_bp.route('/api/separate-audio', methods=['POST'])
+# def separate_audio_endpoint():
+#     data = request.get_json()
+#     filename = data.get('filename')
+#
+#     if not filename:
+#         return jsonify({"error": "Filename is required"}), 400
+#
+#     input_file_path = os.path.join(music_folder, filename)
+#
+#     if not os.path.exists(input_file_path):
+#         return jsonify({"error": f"File not found: {filename}"}), 404
+#
+#     thread = threading.Thread(target=run_demucs_in_background, args=(input_file_path, SEPARATED_DIR))
+#     thread.start()
+#
+#     return jsonify({
+#         "success": True,
+#         "message": f"Separation started for {filename}. This may take a few minutes."
+#     }), 200
+
+# Checks for and returns the available separated channels for a file.
+@routes_bp.route('/api/separated-channels/<filename>', methods=['GET'])
+def get_separated_channels(filename):
+    file_basename = os.path.splitext(filename)[0]
+    expected_dir = os.path.join(SEPARATED_DIR, DEMUCS_MODEL_NAME, file_basename)
+
+    if not os.path.isdir(expected_dir):
+        return jsonify({"status": "processing", "channels": []}), 202
+
+    try:
+        channels = [os.path.splitext(f)[0] for f in os.listdir(expected_dir) if f.endswith('.mp3')]
+        return jsonify({"status": "complete", "channels": channels})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Streams a specific audio channel for playback.
+@routes_bp.route('/api/stream-channel/<filename>/<channel>', methods=['GET'])
+def stream_channel(filename, channel):
+    file_basename = os.path.splitext(filename)[0]
+    channel_filename = f"{channel}.mp3"
+    directory = os.path.join(SEPARATED_DIR, DEMUCS_MODEL_NAME, file_basename)
+
+    if not os.path.exists(os.path.join(directory, channel_filename)):
+        return jsonify({"error": "Channel not found"}), 404
+
+    return send_from_directory(directory, channel_filename, mimetype='audio/mpeg')
