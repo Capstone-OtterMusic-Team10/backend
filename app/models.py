@@ -1,5 +1,6 @@
 from . import db
 from datetime import datetime
+import os
 
 # user class representing the table in db
 class User(db.Model):
@@ -52,3 +53,41 @@ class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('otteruser.id', ondelete='CASCADE'), nullable=False)
+
+# Delete utility functions for prompts and audio files
+
+# Delete all audio files in MusicDownloadFiles/ associated with a prompt.
+
+def delete_audio_files_for_prompt(prompt_id: int, audio_dir="MusicDownloadFiles"):
+    deleted = 0
+    for filename in os.listdir(audio_dir):
+        if filename.startswith(f"lyria_{prompt_id}_") and filename.endswith(".wav"):
+            file_path = os.path.join(audio_dir, filename)
+            os.remove(file_path)
+            print(f" Deleted audio file: {file_path}")
+            deleted += 1
+    if deleted == 0:
+        print(f" No audio files found for prompt {prompt_id}")
+    return deleted
+
+from sqlalchemy.orm import Session
+
+
+# Delete a prompt (Messages row) from the database by ID.
+def delete_prompt_from_db(db: Session, prompt_id: int):
+    prompt = db.query(Messages).filter(Messages.id == prompt_id).first()
+    if prompt:
+        db.delete(prompt)
+        db.commit()
+        print(f" Deleted prompt {prompt_id} from database")
+        return True
+    else:
+        print(f" Prompt {prompt_id} not found in database")
+        return False
+
+
+# Delete a prompt and all associated audio files.
+def delete_prompt_and_audio(db: Session, prompt_id: int):
+
+    if delete_prompt_from_db(db, prompt_id):
+        delete_audio_files_for_prompt(prompt_id)
