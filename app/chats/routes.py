@@ -8,11 +8,9 @@ from ..models import Chat, Messages, Audios, User
 from .. import db, oauth
 from .lyria_demo_test2 import generate_audio
 import os
-import time
 import asyncio
 import os
 import subprocess
-import threading
 from flask import send_from_directory
 from pathlib import Path
 from threading import Thread
@@ -154,8 +152,10 @@ def get_me():
 @routes_bp.route('/chat')
 @jwt_required()
 def get_chats():
+    print(f"User Id meow")
     user_id = get_jwt_identity()
     try:
+        print(user_id)
         chats = Chat.query.filter_by(user_id=user_id).all()
         if chats:
             chat_list = [chat.to_dict() for chat in chats]
