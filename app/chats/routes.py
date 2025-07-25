@@ -7,17 +7,19 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_tok
 from ..models import Chat, Messages, Audios, User
 from .. import db, oauth
 from .lyria_demo_test2 import generate_audio
-import os
 import asyncio
 import os
 import subprocess
-from flask import send_from_directory
 from pathlib import Path
 from threading import Thread
-from flask import jsonify, send_file, abort, current_app
+from flask import jsonify, send_file, send_from_directory, current_app
 from urllib.parse import unquote
 import math
+from dotenv import load_dotenv
+import base64
 
+load_dotenv()
+usevenv = os.getenv("USEVENV")
 routes_bp = Blueprint('routes', __name__)
 
 music_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'MusicDownloadFiles'))
@@ -39,8 +41,11 @@ conda deactivate
 
 """
 
+if usevenv=="true":
+    CONDA_ENV_PATH = "/venv"
+else:
+    CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
 
-CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
 
 # Folder Paths
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -152,7 +157,6 @@ def get_me():
 @routes_bp.route('/chat')
 @jwt_required()
 def get_chats():
-    print(f"User Id meow")
     user_id = get_jwt_identity()
     try:
         print(user_id)
@@ -217,7 +221,6 @@ def post_chats():
 
         commit(new_exchange)
 
-
         Thread(target=create_a_message_and_send_prompt, args=(new_exchange.content, new_chat.id, data, new_exchange.id)
                ).start()
         return make_response(jsonify({"new_chat": new_chat.id, "new_message": new_exchange.id}), 200)
@@ -278,8 +281,8 @@ def delete_prompt_and_audio_route(prompt_id):
 
 # List all audio files in the MusicDownloadFiles directory (API version)
 @routes_bp.route('/api/music-files', methods=['GET'])
+@jwt_required()
 def api_music_files():
-
     try:
         if not os.path.exists(music_dir):
             return jsonify({"files": []}), 200
