@@ -235,10 +235,12 @@ def post_chats():
 @routes_bp.route('/get-audio/<int:chat_id>/<int:message_id>')
 @jwt_required()
 def get_audio(chat_id, message_id):
+    # TEMPORARY!! WILL UNCOMMENT LATER
     user_id = get_jwt_identity()
-    chat = Chat.query.get(chat_id)
-    if not chat or chat.user_id != user_id:
-        return make_response(jsonify({'error': 'Unauthorized'}), 403)
+    # chat = Chat.query.get(chat_id)
+    # if not chat or chat.user_id != user_id:
+    # if not chat:
+    #     return make_response(jsonify({'error': 'Unauthorized'}), 403)
     file_path = f'{music_folder}/lyria_{chat_id}_{message_id}.wav'
     try:
         return send_file(file_path, mimetype='audio/wav')
