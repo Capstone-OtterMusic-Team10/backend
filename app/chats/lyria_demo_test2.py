@@ -50,8 +50,14 @@ DOWNLOAD_DIR = Path.cwd() / "MusicDownloadFiles"
 DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
 
 # Demucs separation constants
-CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
 BASE_DIR = Path.cwd()
+load_dotenv()
+usevenv = os.getenv("USEVENV")
+if usevenv=="true":
+    CONDA_ENV_PATH = BASE_DIR / "venv"
+else:
+    CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
+
 SEPARATED_DIR = BASE_DIR / "separated_music"
 DEMUCS_MODEL_NAME = "htdemucs_ft" # music model!
 
@@ -124,7 +130,6 @@ async def schedule_auto_stop(session, send_task):
 
 # Main function to run the Lyria demo
 async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
-    load_dotenv()
     api_key = os.getenv("GOOGLE_API_KEY") or input("API Key: ").strip()
 
     client = genai.Client(

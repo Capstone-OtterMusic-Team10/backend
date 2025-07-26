@@ -1,8 +1,0 @@
-Single-database configuration for Flask.
-Pull backend, cd into it
-python -m venv venv or python3 -m venv venv
-Unix: source venv/bin/activate; Windows: venv\Scripts\activate
-pip install -r requirements.txt
-flask db init
-flask db migrate
-flask db upgrade
