@@ -77,8 +77,8 @@ def create_app():
     from .auth_routes import auth_bp
     app.register_blueprint(auth_bp)
 
-    with app.app_context():
-        from . import populate_db
-        populate_db.add_initial_data()
+    # with app.app_context():
+    #     from . import populate_db
+    #     populate_db.add_initial_data()
 
     return app

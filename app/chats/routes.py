@@ -410,15 +410,22 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 def run_demucs_in_background(input_path, output_path):
-    python_executable = os.path.join(CONDA_ENV_PATH, "bin/python")
+    if os.name == 'nt':
+        python_executable = os.path.join(CONDA_ENV_PATH, "Scripts", "python.exe")
+    else:
+        python_executable = os.path.join(CONDA_ENV_PATH, "bin", "python")
+
     script_path = os.path.join(BASE_DIR, "separator.py")
+
     if not os.path.exists(python_executable):
         logger.error(f"FATAL ERROR: Conda python executable not found at {python_executable}")
         return
+
     command = [python_executable, script_path, input_path, output_path]
     logger.debug(f"Starting background process: {' '.join(command)}")
     subprocess.Popen(command)
     logger.info("Background process started.")
+
 @routes_bp.route('/api/separated-channels/<filename>', methods=['GET'])
 def get_separated_channels(filename):
     file_basename = os.path.splitext(filename)[0]
