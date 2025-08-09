@@ -4,3 +4,4 @@ venv
 MusicDownloadFiles
 migrations/
 separated_music/
+/.idea

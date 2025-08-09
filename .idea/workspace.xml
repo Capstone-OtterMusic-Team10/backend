@@ -4,7 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="9eeb2744-2d90-4137-9496-41aa6e814278" name="Changes" comment="Added 30 second cap for audio creation" />
+    <list default="true" id="9eeb2744-2d90-4137-9496-41aa6e814278" name="Changes" comment="Added 30 second cap for audio creation">
+      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_6_26_25__3_54PM__Changes_.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_6_26_25__3_54PM__Changes_.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_7_10_25__3_18PM__Changes_.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Checkout_at_7_10_25__3_18PM__Changes_.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/chats/lyria_demo_test2.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/chats/lyria_demo_test2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/chats/routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/chats/routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,6 +44,9 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="UPDATE_TYPE" value="REBASE" />
   </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 0
 }</component>
@@ -45,22 +55,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.app.executor": "Run",
-    "Python.lyria_demo.executor": "Run",
-    "Python.lyria_demo_test2.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "last_opened_file_path": "/Users/aryeh/backend",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.lyria_demo.executor&quot;: &quot;Run&quot;,
+    &quot;Python.lyria_demo_test2.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;ERDev-2&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/erics/KB/backend/migrations&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\erics\KB\backend\migrations" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -79,6 +96,58 @@
       <updated>1750653662978</updated>
       <workItem from="1750653664084" duration="13708000" />
       <workItem from="1750896739525" duration="29715000" />
+      <workItem from="1754153539596" duration="228000" />
+      <workItem from="1754153785192" duration="394000" />
+      <workItem from="1754154193272" duration="932000" />
+      <workItem from="1754155148175" duration="820000" />
+      <workItem from="1754156003373" duration="761000" />
+      <workItem from="1754156793196" duration="971000" />
+      <workItem from="1754157795688" duration="1120000" />
+      <workItem from="1754158951990" duration="210000" />
+      <workItem from="1754159184032" duration="487000" />
+      <workItem from="1754159700078" duration="694000" />
+      <workItem from="1754160414765" duration="424000" />
+      <workItem from="1754160864630" duration="1196000" />
+      <workItem from="1754162114520" duration="703000" />
+      <workItem from="1754169509135" duration="1127000" />
+      <workItem from="1754170664987" duration="688000" />
+      <workItem from="1754171370212" duration="492000" />
+      <workItem from="1754171910350" duration="92000" />
+      <workItem from="1754172013702" duration="139000" />
+      <workItem from="1754172204407" duration="1154000" />
+      <workItem from="1754173393834" duration="1811000" />
+      <workItem from="1754180166555" duration="723000" />
+      <workItem from="1754180910921" duration="1855000" />
+      <workItem from="1754182807804" duration="169000" />
+      <workItem from="1754218021059" duration="4671000" />
+      <workItem from="1754222867088" duration="348000" />
+      <workItem from="1754223228699" duration="1013000" />
+      <workItem from="1754224273852" duration="795000" />
+      <workItem from="1754225088734" duration="616000" />
+      <workItem from="1754225735823" duration="2383000" />
+      <workItem from="1754228167637" duration="1390000" />
+      <workItem from="1754230042431" duration="1052000" />
+      <workItem from="1754231912703" duration="871000" />
+      <workItem from="1754233039915" duration="4519000" />
+      <workItem from="1754238359855" duration="1148000" />
+      <workItem from="1754434987398" duration="1249000" />
+      <workItem from="1754522915219" duration="2165000" />
+      <workItem from="1754525123560" duration="2364000" />
+      <workItem from="1754684666336" duration="2092000" />
+      <workItem from="1754687472809" duration="2538000" />
+      <workItem from="1754690753824" duration="1002000" />
+      <workItem from="1754691886723" duration="2376000" />
+      <workItem from="1754694306968" duration="1031000" />
+      <workItem from="1754695372066" duration="1481000" />
+      <workItem from="1754696983572" duration="900000" />
+      <workItem from="1754698595039" duration="1196000" />
+      <workItem from="1754699828442" duration="1382000" />
+      <workItem from="1754701240729" duration="187000" />
+      <workItem from="1754701437530" duration="231000" />
+      <workItem from="1754701681678" duration="69000" />
+      <workItem from="1754701768780" duration="61000" />
+      <workItem from="1754701888772" duration="105000" />
+      <workItem from="1754702978069" duration="1132000" />
     </task>
     <task id="LOCAL-00001" summary="we're trying here">
       <option name="closed" value="true" />
@@ -154,8 +223,8 @@
     <option name="LAST_COMMIT_MESSAGE" value="Added 30 second cap for audio creation" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/backend$app.coverage" NAME="app Coverage Results" MODIFIED="1751932425723" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/backend$lyria_demo_test2.coverage" NAME="lyria_demo_test2 Coverage Results" MODIFIED="1751490763808" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/backend$lyria_demo.coverage" NAME="lyria_demo Coverage Results" MODIFIED="1750895452142" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/backend$app.coverage" NAME="app Coverage Results" MODIFIED="1751932425723" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>
