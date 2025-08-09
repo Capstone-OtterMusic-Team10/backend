@@ -34,11 +34,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import logging
-
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
 # Audio/model constants - from Google demo
 BUFFER_SECONDS = 1
 CHUNK = 4200
@@ -55,7 +53,7 @@ DOWNLOAD_DIR.mkdir(exist_ok=True) # create if it doesn't exist
 BASE_DIR = Path.cwd()
 load_dotenv()
 usevenv = os.getenv("USEVENV")
-if usevenv=="true":
+if usevenv == "true":
     CONDA_ENV_PATH = BASE_DIR / "venv"
 else:
     CONDA_ENV_PATH = "/opt/anaconda3/envs/demucs-env"
@@ -68,10 +66,13 @@ MAX_PLAY_SECONDS = 30 # hard cap per PLAY
 auto_stop_task: asyncio.Task | None = None # will hold the running timer
 # Run Demucs separation in a background thread to avoid blocking the API.
 def run_demucs_in_background(input_path, output_path):
-    python_executable = os.path.join(CONDA_ENV_PATH, "bin/python")
+    if os.name == 'nt':
+        python_executable = os.path.join(CONDA_ENV_PATH, "Scripts", "python.exe")
+    else:
+        python_executable = os.path.join(CONDA_ENV_PATH, "bin", "python")
     script_path = BASE_DIR / "separator.py"
     if not os.path.exists(python_executable):
-        logger.error(f"FATAL ERROR: Conda python executable not found at {python_executable}")
+        logger.error(f"FATAL ERROR: Python executable not found at {python_executable}")
         return
     command = [python_executable, str(script_path), str(input_path), str(output_path)]
     logger.debug(f"Starting background Demucs process: {' '.join(command)}")
@@ -84,11 +85,9 @@ def start_demucs_separation_after_lyria(chat_id, prompt_id):
     try:
         input_filename = f"lyria_{chat_id}_{prompt_id}.wav"
         input_path = DOWNLOAD_DIR / input_filename
-
         if not input_path.exists():
             logger.warning(f"Audio file not found: {input_path}")
             return
-
         # Start Demucs separation in background
         thread = threading.Thread(
             target=run_demucs_in_background,
@@ -96,9 +95,7 @@ def start_demucs_separation_after_lyria(chat_id, prompt_id):
         )
         thread.daemon = True
         thread.start()
-
         logger.info(f"Started Demucs separation for {input_filename} in background")
-
     except Exception as e:
         logger.error(f"Failed to start Demucs separation: {e}")
 # Helper function to ask user if they want to save the audio clip
@@ -132,7 +129,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
     except Exception as e:
         logger.error(f"Failed to retrieve API key: {e}")
         raise
-
     try:
         client = genai.Client(
             api_key=api_key,
@@ -142,7 +138,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
     except Exception as e:
         logger.error(f"Failed to initialize Google client: {e}")
         raise
-
     pcm_buffer = bytearray()
     try:
         pa = pyaudio.PyAudio()
@@ -150,7 +145,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
     except Exception as e:
         logger.error(f"Failed to initialize PyAudio: {e}")
         raise
-
     config = types.LiveMusicGenerationConfig()
     global auto_stop_task
     try:
@@ -197,7 +191,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
                         logger.debug("Audio stream closed")
                     except Exception as e:
                         logger.error(f"Failed to close audio stream: {e}")
-
             async def send() -> None:
                 await asyncio.sleep(5)
                 global auto_stop_task
@@ -303,24 +296,20 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
                         logger.debug("Single prompt set via input")
                     except Exception as e:
                         logger.error(f"Failed to set single prompt: {e}")
-
             try:
                 config.bpm = bpm
                 logger.debug(f"BPM configured to {bpm}")
             except ValueError:
                 config.bpm = 120
                 logger.warning(f"Invalid BPM, defaulting to 120")
-
             config.scale = key
             logger.debug(f"Scale configured to {key}")
-
             try:
                 await session.set_music_generation_config(config=config)
                 logger.debug("Music generation config set")
             except Exception as e:
                 logger.error(f"Failed to set music config: {e}")
                 raise
-
             try:
                 await session.set_weighted_prompts(
                     prompts=[types.WeightedPrompt(text=prompt, weight=1.0)]
@@ -329,14 +318,12 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
             except Exception as e:
                 logger.error(f"Failed to set initial prompt: {e}")
                 raise
-
             try:
                 await session.play()
                 logger.debug("Session playback initiated")
             except Exception as e:
                 logger.error(f"Failed to initiate session play: {e}")
                 raise
-
             send_t = asyncio.create_task(send(), name="send")
             auto_stop_task = asyncio.create_task(schedule_auto_stop(session, send_t))
             recv_t = asyncio.create_task(receive(), name="recv")
@@ -360,7 +347,6 @@ async def generate_audio(bpm, key, prompt, chat_id, prompt_id) -> None:
             logger.debug("PyAudio terminated")
         except Exception as e:
             logger.error(f"Failed to terminate PyAudio: {e}")
-
     save, path = download(chat_id, prompt_id)
     if save:
         if pcm_buffer:
