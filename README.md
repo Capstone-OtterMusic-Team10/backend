@@ -33,3 +33,8 @@ POSTGRES_PASSWORD=my_password
 POSTGRES_USER=my_username
 POSTGRES_DB=database_name
 ```
+
+
+If using windows and python venv you must manually install ffmpeg 
+(the ffmpeg in python depencencies is same name but does not function for windows file creation for separation demucs script)
+See ffmpeg pdf in project.
